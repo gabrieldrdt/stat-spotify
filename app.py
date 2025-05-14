@@ -8,9 +8,9 @@ from PIL import Image
 from io import BytesIO
 
 st.set_page_config(page_title="Stat Spotify", layout="wide")
-st.title("🎧 Stat Spotify - Debug")
+st.title("🎧 Stat Spotify (version stabilisée)")
 
-# Auth config
+# Auth Spotify
 SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
 SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
 SPOTIPY_REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
@@ -47,6 +47,7 @@ sp = spotipy.Spotify(auth=st.session_state.token_info)
 user = sp.current_user()
 st.success(f"Connecté : **{user['display_name']}**")
 
+# Sélection de période
 range_map = {
     "🎯 Dernier mois (4 semaines)": "short_term",
     "📈 6 derniers mois": "medium_term",
@@ -55,31 +56,37 @@ range_map = {
 period = st.selectbox("📅 Choisis une période :", list(range_map.keys()))
 selected_range = range_map[period]
 
+# Limite allégée à 30 morceaux
 raw_tracks = sp.current_user_top_tracks(limit=50, time_range=selected_range)
 if not raw_tracks["items"]:
     st.warning("Aucune donnée disponible.")
     st.stop()
 
-# Debug : affichage simple + espacé + stable
 albums = []
 seen_keys = set()
+track_displayed = 0
+MAX_TRACKS = 30
 
-st.header(f"🎧 Analyse pour : {period}")
-for i, track in enumerate(raw_tracks["items"], 1):
+st.header(f"🎧 Morceaux les plus écoutés ({period})")
+
+for track in raw_tracks["items"]:
+    if track_displayed >= MAX_TRACKS:
+        break
+
     name = track["name"]
     artist = track["artists"][0]["name"]
     album = track["album"]["name"]
     url = track["external_urls"]["spotify"]
-    image_url = track["album"]["images"][0]["url"]
+    image_list = track["album"]["images"]
 
-    # éviter doublons
+    # doublon ?
     key = f"{name.lower()}::{artist.lower()}"
     if key in seen_keys:
         continue
     seen_keys.add(key)
     albums.append(album)
 
-    # Version spéciale ?
+    # version ?
     version_tag = ""
     if "remix" in name.lower():
         version_tag = "🌀 Remix"
@@ -88,28 +95,32 @@ for i, track in enumerate(raw_tracks["items"], 1):
     elif "version" in name.lower():
         version_tag = "🎧 Version spéciale"
 
-    # Affichage sécurisé
-    try:
-        response = requests.get(image_url)
-        img = Image.open(BytesIO(response.content))
-        st.image(img, width=180)
-    except Exception:
-        st.write("❌ Pas de cover")
+    # cover ?
+    image_displayed = False
+    if image_list and isinstance(image_list, list) and len(image_list) > 0:
+        try:
+            response = requests.get(image_list[0]["url"], timeout=5)
+            img = Image.open(BytesIO(response.content))
+            st.image(img, width=160)
+            image_displayed = True
+        except Exception:
+            st.warning("❌ Cover non disponible")
 
-    st.markdown(f"**{i}. [{name}]({url})** {'• ' + version_tag if version_tag else ''}")
+    if not image_displayed:
+        st.write("🖼 Pas de cover valide")
+
+    st.markdown(f"### [{name}]({url}) {'• ' + version_tag if version_tag else ''}")
     st.write(f"👤 {artist}")
     st.write(f"💿 {album}")
-    st.markdown(f"🔗 Lien brut : {url}")
-    st.markdown(f"📁 Image URL : {image_url}")
-    st.markdown(f"🧪 ID cache : {track['id']}")
     st.markdown("---")
-    st.write("")  # espacement
-    st.write("")  # double espace
+    st.write("")
+    st.write("")
 
-# Albums stats
+    track_displayed += 1
+
+# Top albums
 st.subheader("📀 Albums les plus présents")
-from collections import Counter
 for i, (album, count) in enumerate(Counter(albums).most_common(3), 1):
     st.write(f"{i}. {album} ({count} fois)")
 
-st.write(f"🎧 Nombre de morceaux uniques affichés : **{len(seen_keys)}**")
+st.write(f"🎧 Morceaux affichés : **{track_displayed}** (sur {len(raw_tracks['items'])})")
