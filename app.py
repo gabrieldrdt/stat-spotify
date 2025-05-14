@@ -7,9 +7,8 @@ import requests
 from PIL import Image
 from io import BytesIO
 
-# Config
 st.set_page_config(page_title="Stat Spotify", layout="wide")
-st.title("🎧 Stat Spotify (pagination)")
+st.title("🎧 Stat Spotify (pagination réelle)")
 
 # Auth Spotify
 SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
@@ -26,7 +25,6 @@ auth_manager = SpotifyOAuth(
 if "token_info" not in st.session_state:
     st.session_state.token_info = None
 
-# Callback Spotify
 query_params = st.query_params
 if "code" in query_params and st.session_state.token_info is None:
     code = query_params["code"]
@@ -35,20 +33,18 @@ if "code" in query_params and st.session_state.token_info is None:
         st.session_state.token_info = token_info
         st.rerun()
 
-# Connexion
 if st.session_state.token_info is None:
     if st.button("🔓 Se connecter à Spotify"):
         auth_url = auth_manager.get_authorize_url()
         st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
     st.stop()
 
-# Déconnexion
+# Déconnexion propre
 logout = st.button("🚪 Se déconnecter")
 if logout:
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
-
 
 sp = spotipy.Spotify(auth=st.session_state.token_info)
 user = sp.current_user()
@@ -66,34 +62,38 @@ selected_range = range_map[period]
 # Reset pagination si période changée
 if "last_period" not in st.session_state or st.session_state.last_period != selected_range:
     st.session_state.last_period = selected_range
-    st.session_state.tracks_shown = 10
+    st.session_state.page_index = 0
 
-# Récupération des morceaux
+# Récupération brute
 raw_tracks = sp.current_user_top_tracks(limit=50, time_range=selected_range)
 if not raw_tracks["items"]:
     st.warning("Aucune donnée disponible.")
     st.stop()
 
-albums = []
-seen_keys = set()
-tracks = []
-
 # Nettoyage des doublons
+unique = {}
+albums = []
+
 for track in raw_tracks["items"]:
     name = track["name"]
     artist = track["artists"][0]["name"]
     key = f"{name.lower()}::{artist.lower()}"
-    if key not in seen_keys:
-        seen_keys.add(key)
-        tracks.append(track)
+    if key not in unique:
+        unique[key] = track
         albums.append(track["album"]["name"])
 
-# Affichage avec pagination
+tracks = list(unique.values())
+total = len(tracks)
+
+# Pagination réelle
+per_page = 10
+start = st.session_state.page_index * per_page
+end = start + per_page
+visible_tracks = tracks[start:end]
+
 st.header(f"🎧 Morceaux les plus écoutés ({period})")
 
-to_display = tracks[:st.session_state.tracks_shown]
-
-for i, track in enumerate(to_display, 1):
+for i, track in enumerate(visible_tracks, start + 1):
     name = track["name"]
     artist = track["artists"][0]["name"]
     album = track["album"]["name"]
@@ -110,8 +110,7 @@ for i, track in enumerate(to_display, 1):
 
     if images:
         try:
-            response = requests.get(images[0]["url"], timeout=5)
-            img = Image.open(BytesIO(response.content))
+            img = Image.open(BytesIO(requests.get(images[0]["url"], timeout=5).content))
             st.image(img, width=150)
         except Exception:
             st.write("❌ Cover non dispo")
@@ -123,15 +122,24 @@ for i, track in enumerate(to_display, 1):
     st.write(f"💿 {album}")
     st.markdown("---")
 
-# Bouton pour afficher plus
-if st.session_state.tracks_shown < len(tracks):
-    if st.button("🔽 Afficher plus de morceaux"):
-        st.session_state.tracks_shown += 10
-        st.experimental_rerun()
+# Navigation entre les pages
+col1, col2, col3 = st.columns([1, 1, 2])
+with col1:
+    if st.session_state.page_index > 0:
+        if st.button("⬅ Page précédente"):
+            st.session_state.page_index -= 1
+            st.rerun()
+with col2:
+    if end < total:
+        if st.button("➡ Page suivante"):
+            st.session_state.page_index += 1
+            st.rerun()
+with col3:
+    st.markdown(f"Page **{st.session_state.page_index + 1}** / {((total - 1) // per_page) + 1}")
 
-# Stat albums
+# Albums les plus fréquents
 st.subheader("📀 Albums les plus présents")
 for i, (album, count) in enumerate(Counter(albums).most_common(3), 1):
     st.write(f"{i}. {album} ({count} fois)")
 
-st.write(f"🎧 Morceaux affichés : {min(st.session_state.tracks_shown, len(tracks))}/{len(tracks)}")
+st.write(f"🎧 Morceaux uniques trouvés : **{total}**")
