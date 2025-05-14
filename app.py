@@ -8,9 +8,9 @@ from PIL import Image
 from io import BytesIO
 
 st.set_page_config(page_title="Stat Spotify", layout="wide")
-st.title("🎧 Stat Spotify (pagination réelle)")
+st.title("🎧 Stat Spotify (safe mode)")
 
-# Auth Spotify
+# Auth
 SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
 SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
 SPOTIPY_REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
@@ -39,90 +39,96 @@ if st.session_state.token_info is None:
         st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
     st.stop()
 
-# Déconnexion propre
-logout = st.button("🚪 Se déconnecter")
-if logout:
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
+if st.button("🚪 Se déconnecter"):
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
     st.rerun()
 
 sp = spotipy.Spotify(auth=st.session_state.token_info)
 user = sp.current_user()
 st.success(f"Connecté : **{user['display_name']}**")
 
-# Choix de période
+# Période
 range_map = {
-    "🎯 Dernier mois (4 semaines)": "short_term",
-    "📈 6 derniers mois": "medium_term",
-    "📊 1 an ou plus": "long_term"
+    "🎯 Dernier mois": "short_term",
+    "📈 6 mois": "medium_term",
+    "📊 1 an": "long_term"
 }
-period = st.selectbox("📅 Choisis une période :", list(range_map.keys()))
+period = st.selectbox("📅 Période :", list(range_map.keys()))
 selected_range = range_map[period]
 
-# Reset pagination si période changée
+# Pagination
 if "last_period" not in st.session_state or st.session_state.last_period != selected_range:
     st.session_state.last_period = selected_range
     st.session_state.page_index = 0
 
-# Récupération brute
 raw_tracks = sp.current_user_top_tracks(limit=50, time_range=selected_range)
 if not raw_tracks["items"]:
     st.warning("Aucune donnée disponible.")
     st.stop()
 
-# Nettoyage des doublons
+# Nettoyage
 unique = {}
 albums = []
 
 for track in raw_tracks["items"]:
-    name = track["name"]
-    artist = track["artists"][0]["name"]
-    key = f"{name.lower()}::{artist.lower()}"
-    if key not in unique:
-        unique[key] = track
-        albums.append(track["album"]["name"])
+    try:
+        name = track["name"]
+        artist = track["artists"][0]["name"]
+        album = track["album"]["name"]
+        url = track["external_urls"]["spotify"]
+        images = track["album"]["images"]
+
+        if not images or not url:
+            continue
+
+        key = f"{name.lower()}::{artist.lower()}"
+        if key not in unique:
+            unique[key] = track
+            albums.append(album)
+    except Exception:
+        continue
 
 tracks = list(unique.values())
 total = len(tracks)
 
-# Pagination réelle
+# Affichage
 per_page = 10
 start = st.session_state.page_index * per_page
 end = start + per_page
-visible_tracks = tracks[start:end]
+visible = tracks[start:end]
 
-st.header(f"🎧 Morceaux les plus écoutés ({period})")
+st.header(f"🎵 Morceaux écoutés ({period})")
 
-for i, track in enumerate(visible_tracks, start + 1):
-    name = track["name"]
-    artist = track["artists"][0]["name"]
-    album = track["album"]["name"]
-    url = track["external_urls"]["spotify"]
-    images = track["album"]["images"]
+for i, track in enumerate(visible, start + 1):
+    try:
+        name = track["name"]
+        artist = track["artists"][0]["name"]
+        album = track["album"]["name"]
+        url = track["external_urls"]["spotify"]
+        image_url = track["album"]["images"][0]["url"]
 
-    version_tag = ""
-    if "remix" in name.lower():
-        version_tag = "🌀 Remix"
-    elif "live" in name.lower():
-        version_tag = "🎤 Live"
-    elif "version" in name.lower():
-        version_tag = "🎧 Version spéciale"
+        response = requests.get(image_url, timeout=4)
+        img = Image.open(BytesIO(response.content))
+        st.image(img, width=150)
 
-    if images:
-        try:
-            img = Image.open(BytesIO(requests.get(images[0]["url"], timeout=5).content))
-            st.image(img, width=150)
-        except Exception:
-            st.write("❌ Cover non dispo")
-    else:
-        st.write("🖼 Pas de cover")
+        version_tag = ""
+        lowered = name.lower()
+        if "remix" in lowered:
+            version_tag = "🌀 Remix"
+        elif "live" in lowered:
+            version_tag = "🎤 Live"
+        elif "version" in lowered:
+            version_tag = "🎧 Version spéciale"
 
-    st.markdown(f"### {i}. [{name}]({url}) {'• ' + version_tag if version_tag else ''}")
-    st.write(f"👤 {artist}")
-    st.write(f"💿 {album}")
-    st.markdown("---")
+        st.markdown(f"### {i}. [{name}]({url}) {'• ' + version_tag if version_tag else ''}")
+        st.write(f"👤 {artist}")
+        st.write(f"💿 {album}")
+        st.markdown("---")
+    except Exception:
+        continue
 
-# Navigation entre les pages
+# Pagination
 col1, col2, col3 = st.columns([1, 1, 2])
 with col1:
     if st.session_state.page_index > 0:
@@ -137,9 +143,9 @@ with col2:
 with col3:
     st.markdown(f"Page **{st.session_state.page_index + 1}** / {((total - 1) // per_page) + 1}")
 
-# Albums les plus fréquents
+# Albums
 st.subheader("📀 Albums les plus présents")
 for i, (album, count) in enumerate(Counter(albums).most_common(3), 1):
     st.write(f"{i}. {album} ({count} fois)")
 
-st.write(f"🎧 Morceaux uniques trouvés : **{total}**")
+st.write(f"🎧 Total morceaux valides : **{len(tracks)}**")
