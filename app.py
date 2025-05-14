@@ -43,9 +43,12 @@ if st.session_state.token_info is None:
     st.stop()
 
 # Déconnexion
-if st.button("🚪 Se déconnecter"):
-    st.session_state.token_info = None
-    st.experimental_rerun()
+logout = st.button("🚪 Se déconnecter")
+if logout:
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
+
 
 sp = spotipy.Spotify(auth=st.session_state.token_info)
 user = sp.current_user()
