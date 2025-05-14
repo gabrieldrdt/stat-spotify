@@ -24,14 +24,14 @@ auth_manager = SpotifyOAuth(
     scope="user-top-read"
 )
 
-# Gérer le retour de Spotify
-query_params = st.experimental_get_query_params()
+# ✅ Remplace l'ancien appel par la version actuelle
+query_params = st.query_params
 if "code" in query_params and st.session_state.token_info is None:
-    code = query_params["code"][0]
+    code = query_params["code"]
     token_info = auth_manager.get_access_token(code, as_dict=False)
     if token_info:
         st.session_state.token_info = token_info
-        st.experimental_rerun()
+        st.rerun()
 
 # Pas encore connecté
 if st.session_state.token_info is None:
