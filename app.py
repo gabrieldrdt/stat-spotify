@@ -7,11 +7,10 @@ import requests
 from PIL import Image
 from io import BytesIO
 
-# ⚙️ Config
 st.set_page_config(page_title="Stat Spotify", layout="wide")
-st.title("🎧 Stat Spotify")
+st.title("🎧 Stat Spotify - Debug")
 
-# 🔐 Auth Spotify
+# Auth config
 SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
 SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
 SPOTIPY_REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
@@ -26,7 +25,6 @@ auth_manager = SpotifyOAuth(
 if "token_info" not in st.session_state:
     st.session_state.token_info = None
 
-# 🔁 Callback
 query_params = st.query_params
 if "code" in query_params and st.session_state.token_info is None:
     code = query_params["code"]
@@ -35,24 +33,20 @@ if "code" in query_params and st.session_state.token_info is None:
         st.session_state.token_info = token_info
         st.rerun()
 
-# 🔓 Connexion
 if st.session_state.token_info is None:
     if st.button("🔓 Se connecter à Spotify"):
         auth_url = auth_manager.get_authorize_url()
         st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
     st.stop()
 
-# 🚪 Déconnexion
 if st.button("🚪 Se déconnecter"):
     st.session_state.token_info = None
     st.experimental_rerun()
 
-# ✅ Connecté
 sp = spotipy.Spotify(auth=st.session_state.token_info)
 user = sp.current_user()
 st.success(f"Connecté : **{user['display_name']}**")
 
-# ⏳ Sélection période
 range_map = {
     "🎯 Dernier mois (4 semaines)": "short_term",
     "📈 6 derniers mois": "medium_term",
@@ -61,56 +55,61 @@ range_map = {
 period = st.selectbox("📅 Choisis une période :", list(range_map.keys()))
 selected_range = range_map[period]
 
-# 🎵 Récupération des morceaux
 raw_tracks = sp.current_user_top_tracks(limit=50, time_range=selected_range)
 if not raw_tracks["items"]:
     st.warning("Aucune donnée disponible.")
     st.stop()
 
-# 🔁 Suppression des doublons
-unique_tracks = {}
-for track in raw_tracks["items"]:
-    name = track["name"]
-    artist = track["artists"][0]["name"]
-    key = f"{name.lower()}::{artist.lower()}"
-    if key not in unique_tracks:
-        unique_tracks[key] = track
-
-# 🎧 Affichage
-st.header("🎵 Tes morceaux les plus écoutés")
+# Debug : affichage simple + espacé + stable
 albums = []
+seen_keys = set()
 
-for i, track in enumerate(unique_tracks.values(), 1):
+st.header(f"🎧 Analyse pour : {period}")
+for i, track in enumerate(raw_tracks["items"], 1):
     name = track["name"]
     artist = track["artists"][0]["name"]
     album = track["album"]["name"]
     url = track["external_urls"]["spotify"]
     image_url = track["album"]["images"][0]["url"]
+
+    # éviter doublons
+    key = f"{name.lower()}::{artist.lower()}"
+    if key in seen_keys:
+        continue
+    seen_keys.add(key)
     albums.append(album)
 
+    # Version spéciale ?
     version_tag = ""
-    lowered = name.lower()
-    if "remix" in lowered:
+    if "remix" in name.lower():
         version_tag = "🌀 Remix"
-    elif "live" in lowered:
+    elif "live" in name.lower():
         version_tag = "🎤 Live"
-    elif "version" in lowered:
+    elif "version" in name.lower():
         version_tag = "🎧 Version spéciale"
 
-    # 💡 Affichage simple et robuste
-    st.markdown(f"### {i}. [{name}]({url}) {'• ' + version_tag if version_tag else ''}")
+    # Affichage sécurisé
     try:
-        img = Image.open(BytesIO(requests.get(image_url).content))
-        st.image(img, width=150)
+        response = requests.get(image_url)
+        img = Image.open(BytesIO(response.content))
+        st.image(img, width=180)
     except Exception:
         st.write("❌ Pas de cover")
-    st.write(f"👤 {artist}  \n💿 {album}")
-    st.divider()
 
-# 📀 Statistiques albums
+    st.markdown(f"**{i}. [{name}]({url})** {'• ' + version_tag if version_tag else ''}")
+    st.write(f"👤 {artist}")
+    st.write(f"💿 {album}")
+    st.markdown(f"🔗 Lien brut : {url}")
+    st.markdown(f"📁 Image URL : {image_url}")
+    st.markdown(f"🧪 ID cache : {track['id']}")
+    st.markdown("---")
+    st.write("")  # espacement
+    st.write("")  # double espace
+
+# Albums stats
 st.subheader("📀 Albums les plus présents")
-top_albums = Counter(albums).most_common(3)
-for i, (album, count) in enumerate(top_albums, 1):
-    st.write(f"{i}. {album} ({count} apparition{'s' if count > 1 else ''})")
+from collections import Counter
+for i, (album, count) in enumerate(Counter(albums).most_common(3), 1):
+    st.write(f"{i}. {album} ({count} fois)")
 
-st.write(f"🎧 Titres uniques analysés : **{len(unique_tracks)}**")
+st.write(f"🎧 Nombre de morceaux uniques affichés : **{len(seen_keys)}**")
