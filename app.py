@@ -7,7 +7,7 @@ import requests
 from PIL import Image
 from io import BytesIO
 
-# ⚙️ Config Streamlit
+# ⚙️ Config
 st.set_page_config(page_title="Stat Spotify", layout="wide")
 st.title("🎧 Stat Spotify")
 
@@ -26,7 +26,7 @@ auth_manager = SpotifyOAuth(
 if "token_info" not in st.session_state:
     st.session_state.token_info = None
 
-# 🔁 Callback après login Spotify
+# 🔁 Callback
 query_params = st.query_params
 if "code" in query_params and st.session_state.token_info is None:
     code = query_params["code"]
@@ -52,22 +52,22 @@ sp = spotipy.Spotify(auth=st.session_state.token_info)
 user = sp.current_user()
 st.success(f"Connecté : **{user['display_name']}**")
 
-# 🔄 Choix de la période
+# ⏳ Sélection période
 range_map = {
     "🎯 Dernier mois (4 semaines)": "short_term",
     "📈 6 derniers mois": "medium_term",
     "📊 1 an ou plus": "long_term"
 }
-period = st.selectbox("📅 Choisis une période :", options=list(range_map.keys()))
+period = st.selectbox("📅 Choisis une période :", list(range_map.keys()))
 selected_range = range_map[period]
 
-# 📊 Récupération des morceaux
+# 🎵 Récupération des morceaux
 raw_tracks = sp.current_user_top_tracks(limit=50, time_range=selected_range)
 if not raw_tracks["items"]:
     st.warning("Aucune donnée disponible.")
     st.stop()
 
-# 🔍 Nettoyer les doublons (titre + artiste)
+# 🔁 Suppression des doublons
 unique_tracks = {}
 for track in raw_tracks["items"]:
     name = track["name"]
@@ -76,7 +76,7 @@ for track in raw_tracks["items"]:
     if key not in unique_tracks:
         unique_tracks[key] = track
 
-# 🎵 Affichage des morceaux
+# 🎧 Affichage
 st.header("🎵 Tes morceaux les plus écoutés")
 albums = []
 
@@ -88,7 +88,6 @@ for i, track in enumerate(unique_tracks.values(), 1):
     image_url = track["album"]["images"][0]["url"]
     albums.append(album)
 
-    # 🔎 Détection remix / live / version
     version_tag = ""
     lowered = name.lower()
     if "remix" in lowered:
@@ -98,24 +97,20 @@ for i, track in enumerate(unique_tracks.values(), 1):
     elif "version" in lowered:
         version_tag = "🎧 Version spéciale"
 
-    # 🎨 Affichage visuel
-    col1, col2 = st.columns([1, 5])
-    with col1:
-        try:
-            response = requests.get(image_url)
-            img = Image.open(BytesIO(response.content))
-            st.image(img, width=80)
-        except Exception:
-            st.write("❌ Pas de cover")
-    with col2:
-        st.markdown(f"**{i}. [{name}]({url})** {'• ' + version_tag if version_tag else ''}")
-        st.markdown(f"👤 {artist}  \n💿 {album}")
+    # 💡 Affichage simple et robuste
+    st.markdown(f"### {i}. [{name}]({url}) {'• ' + version_tag if version_tag else ''}")
+    try:
+        img = Image.open(BytesIO(requests.get(image_url).content))
+        st.image(img, width=150)
+    except Exception:
+        st.write("❌ Pas de cover")
+    st.write(f"👤 {artist}  \n💿 {album}")
+    st.divider()
 
-# 📀 Top albums
-st.divider()
+# 📀 Statistiques albums
 st.subheader("📀 Albums les plus présents")
 top_albums = Counter(albums).most_common(3)
 for i, (album, count) in enumerate(top_albums, 1):
     st.write(f"{i}. {album} ({count} apparition{'s' if count > 1 else ''})")
 
-st.write(f"🎧 Nombre de titres analysés (uniques) : **{len(unique_tracks)}**")
+st.write(f"🎧 Titres uniques analysés : **{len(unique_tracks)}**")
