@@ -63,9 +63,13 @@ if st.button("🚪 Se déconnecter"):
 token = st.session_state.token_info["access_token"]
 sp = spotipy.Spotify(auth=token)
 
-# Infos utilisateur
-user = sp.current_user()
-st.success(f"Connecté : **{user['display_name']}**")
+# Tentative récupération de l'utilisateur
+try:
+    user = sp.current_user()
+    st.success(f"Connecté : **{user['display_name']}**")
+except spotipy.exceptions.SpotifyException:
+    st.error("❌ Erreur : l'utilisateur n'est pas autorisé à accéder à l'API Spotify (403).")
+    st.stop()
 
 # Choix période
 range_map = {
