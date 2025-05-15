@@ -10,45 +10,64 @@ from io import BytesIO
 st.set_page_config(page_title="Stat Spotify", layout="wide")
 st.title("🎧 Stat Spotify (safe mode)")
 
-# Auth
+# Auth Spotify (en variables d’environnement)
 SPOTIPY_CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
 SPOTIPY_CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
 SPOTIPY_REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
 
-auth_manager = SpotifyOAuth(
-    client_id=SPOTIPY_CLIENT_ID,
-    client_secret=SPOTIPY_CLIENT_SECRET,
-    redirect_uri=SPOTIPY_REDIRECT_URI,
-    scope="user-top-read"
-)
-
+# Init session
 if "token_info" not in st.session_state:
     st.session_state.token_info = None
 
 query_params = st.query_params
-if "code" in query_params and st.session_state.token_info is None:
-    code = query_params["code"]
-    token_info = auth_manager.get_access_token(code, as_dict=False)
-    if token_info:
-        st.session_state.token_info = token_info
-        st.rerun()
 
+# Authentification Spotify (code reçu)
+if "code" in query_params and st.session_state.token_info is None:
+    auth_manager = SpotifyOAuth(
+        client_id=SPOTIPY_CLIENT_ID,
+        client_secret=SPOTIPY_CLIENT_SECRET,
+        redirect_uri=SPOTIPY_REDIRECT_URI,
+        scope="user-top-read",
+        cache_path=None
+    )
+    try:
+        token_info = auth_manager.get_access_token(query_params["code"], as_dict=True)
+        if token_info:
+            st.session_state.token_info = token_info
+            st.rerun()
+    except spotipy.exceptions.SpotifyOauthError:
+        st.error("⛔ Le code d'autorisation a expiré. Clique à nouveau sur le bouton pour te reconnecter.")
+        st.stop()
+
+# Connexion Spotify
 if st.session_state.token_info is None:
     if st.button("🔓 Se connecter à Spotify"):
+        auth_manager = SpotifyOAuth(
+            client_id=SPOTIPY_CLIENT_ID,
+            client_secret=SPOTIPY_CLIENT_SECRET,
+            redirect_uri=SPOTIPY_REDIRECT_URI,
+            scope="user-top-read",
+            cache_path=None
+        )
         auth_url = auth_manager.get_authorize_url()
         st.markdown(f'<meta http-equiv="refresh" content="0;url={auth_url}">', unsafe_allow_html=True)
     st.stop()
 
+# Déconnexion
 if st.button("🚪 Se déconnecter"):
     for k in list(st.session_state.keys()):
         del st.session_state[k]
     st.rerun()
 
-sp = spotipy.Spotify(auth=st.session_state.token_info)
+# Client Spotify
+token = st.session_state.token_info["access_token"]
+sp = spotipy.Spotify(auth=token)
+
+# Infos utilisateur
 user = sp.current_user()
 st.success(f"Connecté : **{user['display_name']}**")
 
-# Période
+# Choix période
 range_map = {
     "🎯 Dernier mois": "short_term",
     "📈 6 mois": "medium_term",
@@ -57,11 +76,11 @@ range_map = {
 period = st.selectbox("📅 Période :", list(range_map.keys()))
 selected_range = range_map[period]
 
-# Pagination
 if "last_period" not in st.session_state or st.session_state.last_period != selected_range:
     st.session_state.last_period = selected_range
     st.session_state.page_index = 0
 
+# Récupération des titres
 raw_tracks = sp.current_user_top_tracks(limit=50, time_range=selected_range)
 if not raw_tracks["items"]:
     st.warning("Aucune donnée disponible.")
@@ -92,7 +111,7 @@ for track in raw_tracks["items"]:
 tracks = list(unique.values())
 total = len(tracks)
 
-# Affichage
+# Pagination
 per_page = 10
 start = st.session_state.page_index * per_page
 end = start + per_page
@@ -128,18 +147,16 @@ for i, track in enumerate(visible, start + 1):
     except Exception:
         continue
 
-# Pagination
+# Pagination boutons optimisés
 col1, col2, col3 = st.columns([1, 1, 2])
 with col1:
-    if st.session_state.page_index > 0:
-        if st.button("⬅ Page précédente"):
-            st.session_state.page_index -= 1
-            st.rerun()
+    if st.session_state.page_index > 0 and st.button("⬅ Page précédente"):
+        st.session_state.page_index -= 1
+        st.rerun()
 with col2:
-    if end < total:
-        if st.button("➡ Page suivante"):
-            st.session_state.page_index += 1
-            st.rerun()
+    if end < total and st.button("➡ Page suivante"):
+        st.session_state.page_index += 1
+        st.rerun()
 with col3:
     st.markdown(f"Page **{st.session_state.page_index + 1}** / {((total - 1) // per_page) + 1}")
 
