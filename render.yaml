@@ -1,13 +1,13 @@
 services:
   - type: web
-    name: spotify-stats-gabriel
+    name: stat-spotify
     env: python
     buildCommand: ""
     startCommand: streamlit run app.py --server.port 10000 --server.enableCORS false
     envVars:
       - key: SPOTIPY_CLIENT_ID
-        value: ton_client_id
+        value: 2b0e4eb36077446bab2d620e0150a231
       - key: SPOTIPY_CLIENT_SECRET
-        value: ton_client_secret
+        value: b956049130d446278f2eaa64951e306c
       - key: SPOTIPY_REDIRECT_URI
-        value: https://spotify-stats-gabriel.onrender.com/callback
+        value: https://stat-spotify-1.onrender.com/callback
